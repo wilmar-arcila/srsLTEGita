@@ -15,6 +15,9 @@ METRICS_DIR='cable' # Directorio para almacenar las métricas $METRICS_ROOT/$MET
 NUM_UE=1
 IMSI_UE1=001010123456789
 IMSI_UE2=''
+# Si los equipos están conectados a otra red, se puede enviar de forma automática las métricas y haver el procesamiento de éstas
+SEND_METRICS='ON'
+SEND_METRICS_IP='192.168.0.10'
 
 #############################################################
 function help
@@ -87,64 +90,6 @@ function displayError_and_Exit
 	echo -e "\033[31m\nError: $MSG"
 	echo -e "\nError $1"
 	exit $(($1))
-}
-
-function enviarReporte
-{
-	local STR=$1
-	local PS=''
-	until (( ${#STR}==8 ));do STR+=" ";done
-	echo -en "\n-> $STR (Reporte UE)       | $(echo $IPERF_T|cut -d "," -f 2) -- $IPERF_B [bps]"
-	echo -en "\n-> Enviando reporte al eNB     | ..."
-	sleep 1
-	for i in {1..10}; do echo "$IPERF_T,$IPERF_B"|nc -w 1 $IPSPGW $PUERTONC; done
-	echo -en "\b\b\bOK "
-	PS=$(ps -ax -o pid,comm|grep -w nc|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
-	if [[ -n $PS ]]; then sudo kill -s SIGINT $PS; fi
-}
-
-function esperarReporte
-{
-	local STR=$1
-	local PS=''
-	until (( ${#STR}==8 ));do STR+=" ";done
-	local IPERF_=''
-	local IPERF_T_=''
-	local IPERF_B_=''
-	local n=30
-	local ni=$n
-	local i=1
-	local sp="/-\|"
-	echo -e "$1,eNB,$IPERF_T,$IPERF_B" >> $METRICS_ROOT/$METRICS_DIR/Iperf_$TIME.csv
-	echo -en "\n-> $STR (Reporte eNB)      | $(echo $IPERF_T|cut -d "," -f 2) -- $IPERF_B [bps]\n\033[s"
-	coproc NCPROC { nc -l $PUERTONC; }
-	# Borro el warning generado por tener varios coprocesos
-	#echo -ne "\033[u\033[K"
-	sleep 0.5
-	echo -ne "\033[u-> Esperando reporte del UE    |  \033[K\033[s"
-	until [[ -n $IPERF_ ]]; do sleep 1
-		read -t 0.2 -u ${NCPROC[0]} IPERF_
-		printf "\033[u\b\033[?25l\033[32m${sp:i++%${#sp}:1}"
-		ni=$((ni-1))
-		if (( ni==0 )); then
-			echo -e "\033[u\033[33m\bFAIL   Warning: no se recibió reporte del UE en un lapso de $n \bs\033[39m\n"
-			NCPID_=$(ps -ax -o pid,comm|grep -w nc|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
-			if [[ -n $NCPID_ ]]; then sudo kill -s SIGINT $NCPID_;fi
-			break
-		fi
-	done
-	if [[ -n $IPERF_ ]]; then
-		IPERF_T_=$(echo $IPERF_|cut -d "," -f 1,2)
-		IPERF_B_=$(echo $IPERF_|cut -d "," -f 3)
-		echo -en "\033[G\033[39m"
-	else
-		IPERF_T_=$IPERF_T
-		IPERF_B_='0'
-	fi
-	echo -en "-> $STR (Reporte UE)       | $(echo $IPERF_T_|cut -d "," -f 2) -- $IPERF_B_ [bps]"
-	echo -e "$1,UE,$IPERF_T_,$IPERF_B_" >> $METRICS_ROOT/$METRICS_DIR/Iperf_$TIME.csv
-	PS=$(ps -ax -o pid,comm|grep -w nc|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
-	if [[ -n $PS ]]; then sudo kill -s SIGINT $PS; fi
 }
 
 function verificarFormato
@@ -368,6 +313,7 @@ function mostrarTiempoFaltante
 
 function lanzarIPERFPROC_cliente
 {
+	echo -e "$2,eNB,$(date +%s),Start" >> /tmp/Iperf_$TIME.csv
 	coproc IPERFPROC { 
 		A=''
 		i=0 # Contador de seguridad para cuando el proceso se sale de control
@@ -383,6 +329,7 @@ function lanzarIPERFPROC_cliente
 
 function lanzarIPERFPROC_servidor
 {
+	echo -e "$1,eNB,$(date +%s),Start" >> /tmp/Iperf_$TIME.csv
 	coproc IPERFPROC { iperf -y C -s 2>/dev/null; }
 }
 
@@ -398,11 +345,65 @@ function leerIPERFPROC
 		sleep 1
 	done
 	if [[ -z $IPERF_ ]]; then echo ""; displayError_and_Exit 704; fi
-	IPERF_T=$(echo $IPERF_|cut -d "," -f 1|sed -r s/\([0-9]{4}\)\([0-9]{2}\)\([0-9]{2}\)\([0-9]{2}\)\([0-9]{2}\)\([0-9]{2}\)$/\\1-\\2-\\3','\\4:\\5:\\6/)
+	IPERF_T=$(date -d $(echo $IPERF_|cut -d "," -f 1|sed -r s/\([0-9]{4}\)\([0-9]{2}\)\([0-9]{2}\)\([0-9]{2}\)\([0-9]{2}\)\([0-9]{2}\)$/\\1-\\2-\\3' '\\4:\\5:\\6/) +%s)
 	IPERF_B=$(echo $IPERF_|cut -d "," -f 9)
 	PS=$(ps -ax -o pid,comm|grep -w iperf|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
 	if [[ -n $PS ]]; then sudo kill -s SIGINT $PS 2>/dev/null; fi
 	if [[ -n $IPERFPROC_PID ]]; then sudo kill -s SIGINT $IPERFPROC_PID 2>/dev/null; fi
+}
+
+function mostrarReporte
+{
+	local STR=$1
+	local PS=''
+	until (( ${#STR}==8 ));do STR+=" ";done
+	if [[ $MODO == 'eNB' ]]; then
+		echo -en "\n-> $STR (Reporte eNB)      | $IPERF_B [bps]\n\033[s"
+	else
+		echo -en "\n-> $STR (Reporte UE)       | $IPERF_B [bps]"
+	fi
+	echo -e "$1,$MODO,$IPERF_T,$IPERF_B" >> /tmp/Iperf_$TIME.csv
+}
+
+function enviarReporte
+{
+	echo -en "\n-> Enviando reporte al eNB     | ..."
+	sleep 1
+	for i in {1..10}; do nc -w 1 $IPSPGW $PUERTONC < /tmp/Iperf_$TIME.csv; done
+	echo -en "\b\b\bOK "
+	PS=$(ps -ax -o pid,comm|grep -w nc|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
+	if [[ -n $PS ]]; then sudo kill -s SIGINT $PS; fi
+}
+
+function esperarReporte
+{
+	local IPERF_=''
+	local n=30
+	local ni=$n
+	local i=1
+	local sp="/-\|"
+	
+	coproc NCPROC { nc -l $PUERTONC; }
+
+	sleep 0.5
+	echo -ne "\033[u-> Esperando reporte del UE    |  \033[K\033[s"
+	until [[ -n $IPERF_ ]]; do sleep 1
+		read -t 0.2 -u ${NCPROC[0]} IPERF_
+		printf "\033[u\b\033[?25l\033[32m${sp:i++%${#sp}:1}"
+		ni=$((ni-1))
+		if (( ni==0 )); then
+			echo -e "\033[u\033[33m\bFAIL   Warning: no se recibió reporte del UE en un lapso de $n \bs\033[39m\n"
+			NCPID_=$(ps -ax -o pid,comm|grep -w nc|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
+			if [[ -n $NCPID_ ]]; then sudo kill -s SIGINT $NCPID_;fi
+			break
+		fi
+	done
+	if [[ -n $IPERF_ ]]; then
+		echo $IPERF_ >> /tmp/Iperf_$TIME.csv
+		echo -en "\033[G\033[39m"
+	fi
+	PS=$(ps -ax -o pid,comm|grep -w nc|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
+	if [[ -n $PS ]]; then sudo kill -s SIGINT $PS; fi
 }
 
 function copiarMetricas
@@ -421,9 +422,30 @@ function copiarMetricas
 			displayError_and_Exit 802
 		fi
 	fi
-	if [[ $MODO == 'eNB' ]]; then METRICS_DDIR=$METRICS_ROOT/$METRICS_DIR; fi
+	if [[ $MODO == 'eNB' ]]; then
+		METRICS_DDIR=$METRICS_ROOT/$METRICS_DIR
+		cp /tmp/Iperf_$TIME.csv $METRICS_DDIR/Iperf_$TIME.csv
+	fi
 	cp /tmp/$METRICS_FILE $METRICS_DDIR/$METRICS_DFILE
 	echo -e "\n-> Archivo de métricas OK      | /tmp/$METRICS_FILE -> $METRICS_DDIR/$METRICS_DFILE"
+}
+
+function enviarMetricas
+{
+	local METRICS_DDIR=$METRICS_ROOT/$METRICS_DIR
+	local METRICS_FILE=UE_metrics.csv
+	local METRICS_DFILE=UE_m_$TIME.csv
+	if [[ $MODO == 'eNB' ]]; then
+		echo -ne "\n-> Esperando metricas del UE   | ...\033[K\033[s"
+		nc -l $PUERTONC > $METRICS_DDIR/$METRICS_DFILE
+	else
+		echo -en "\n-> Enviando metricas al eNB    | ..."
+		sleep 2
+		nc -w 1 $SEND_METRICS_IP $PUERTONC < /tmp/METRICS_FILE
+	fi
+	PS=$(ps -ax -o pid,comm|grep -w nc|sed -e 's/^[ \t]*//'|cut -d " " -f 1)
+	if [[ -n $PS ]]; then sudo kill -s SIGINT $PS; fi
+	echo -en "\b\b\bOK "
 }
 #####################################################################################
 
@@ -514,18 +536,14 @@ sleep 0.2
 echo -en "\n-> Ejecutando IPERF DOWNLINK   | []"
 if [[ $MODO == 'eNB' ]];then
 	sleep 1
-	lanzarIPERFPROC_cliente $IPDIR
+	lanzarIPERFPROC_cliente $IPDIR "DOWNLINK"
 else
-	lanzarIPERFPROC_servidor
+	lanzarIPERFPROC_servidor "DOWNLINK"
 fi
 leerIPERFPROC
 sleep 0.5
-# Envío reporte al eNB
-if [[ $MODO == 'eNB' ]]; then
-	esperarReporte "DOWNLINK"
-else
-	enviarReporte "DOWNLINK"
-fi
+mostrarReporte "DOWNLINK"
+
 sleep 0.5
 echo -en "\n-> Esperando los puertos TCP   |  \033[s"
 i=1
@@ -547,27 +565,35 @@ else
 	if [[ -n $NCPROC_PID ]]; then sudo kill -s SIGINT $NCPROC_PID; fi
 fi
 echo -en "\033[u\033[39m\bOK"
+
 # Uplink
 sleep 0.5
 echo -en "\n-> Ejecutando IPERF UPLINK     | []"
 if [[ $MODO == 'eNB' ]];then
-	lanzarIPERFPROC_servidor
+	lanzarIPERFPROC_servidor "UPLINK"
 else
 	sleep 2
-	lanzarIPERFPROC_cliente $IPSPGW
+	lanzarIPERFPROC_cliente $IPSPGW "UPLINK"
 fi
 leerIPERFPROC
 sleep 0.5
+mostrarReporte "UPLINK"
+
+###########Grupo 800-Reportes y copiado del archivo de métricas####################
 # Envío reporte al eNB
 if [[ $MODO == 'eNB' ]]; then
-	esperarReporte "UPLINK"
+	esperarReporte
 else
-	enviarReporte "UPLINK"
+	enviarReporte
 fi
 sleep 0.5
-###########Grupo 800-Copiado del archivo de métricas###############################
+# Detención del proceso srs para que se consolide el archivo de métricas
 sudo kill -s SIGINT $DEVPID
+# Copiado del archivo de métricas
 while [[ -n $(ps -ax -o comm|grep $COMANDO) ]]; do sleep 0.5; done
 copiarMetricas
 sleep 0.5
+if [[ $SEND_METRICS == 'ON' ]]; then
+	enviarMetricas
+fi
 echo -e "\t\033[33mEJECUCIÓN COMPLETADA"
