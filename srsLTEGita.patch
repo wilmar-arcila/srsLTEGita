@@ -1,0 +1,49 @@
+diff -Naur '--exclude=build' '--exclude=.git' srsLTE/srsenb/src/metrics_csv.cc srsLTEGita/srsenb/src/metrics_csv.cc
+--- srsLTE/srsenb/src/metrics_csv.cc	2020-01-22 07:04:24.588432188 -0500
++++ srsLTEGita/srsenb/src/metrics_csv.cc	2020-03-09 20:50:19.001714400 -0500
+@@ -28,6 +28,7 @@
+ #include <sstream>
+ #include <stdlib.h>
+ #include <unistd.h>
++#include <ctime>
+ 
+ #include <stdio.h>
+ 
+@@ -63,10 +64,11 @@
+ {
+   if (file.is_open() && enb != NULL) {
+     if (n_reports == 0) {
+-      file << "time;nof_ue;dl_brate;ul_brate\n";
++      file << "epoch;time;nof_ue;dl_brate;ul_brate\n";
+     }
+ 
+     // Time
++    file << std::time(0) << ";";
+     file << (metrics_report_period * n_reports) << ";";
+ 
+     // UEs
+diff -Naur '--exclude=build' '--exclude=.git' srsLTE/srsue/src/metrics_csv.cc srsLTEGita/srsue/src/metrics_csv.cc
+--- srsLTE/srsue/src/metrics_csv.cc	2020-01-22 07:04:24.624431738 -0500
++++ srsLTEGita/srsue/src/metrics_csv.cc	2020-03-10 14:07:05.255368338 -0500
+@@ -28,6 +28,7 @@
+ #include <sstream>
+ #include <stdlib.h>
+ #include <unistd.h>
++#include <ctime>
+ 
+ #include <stdio.h>
+ 
+@@ -68,10 +69,12 @@
+   pthread_mutex_lock(&mutex);
+   if (file.is_open() && ue != NULL) {
+     if (n_reports == 0) {
+-      file << "time;rsrp;pl;cfo;dl_mcs;dl_snr;dl_turbo;dl_brate;dl_bler;ul_ta;ul_mcs;ul_buff;ul_brate;ul_bler;rf_o;rf_"
++      file << "epoch;time;rsrp;pl;cfo;dl_mcs;dl_snr;dl_turbo;dl_brate;dl_bler;ul_ta;ul_mcs;ul_buff;ul_brate;ul_bler;rf_o;rf_"
+               "u;rf_l;is_attached\n";
+     }
+ 
++    // Time
++    file << std::time(0) << ";";
+     file << (metrics_report_period * n_reports) << ";";
+ 
+     // Print PHY metrics for first CC
