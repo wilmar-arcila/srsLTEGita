@@ -148,7 +148,7 @@ function ejecutarSRS
 	local sp="/-\|"
 	until (( ${#STR}==3 ));do STR+=" ";done
 	#coproc DEVPROC { sudo $COMANDO $COM_ARGS &> /dev/null; }
-	sudo $COMANDO $COM_ARGS &> /dev/null &
+	sudo $COMANDO $COM_ARGS --gui.enable=false &> /dev/null &
 	echo -ne "-> Lanzando el $STR             |  \033[s"
 	until (( j==0 )); do sleep 1
 		printf "\033[u\b\033[?25l\033[32m${sp:i++%${#sp}:1}"
@@ -594,6 +594,6 @@ if [[ $SEND_METRICS == 'ON' ]]; then
 	sleep 1
 	./processMetrics.sh $TIME
 	sleep 1
-	gnuplot -p -e "TITLE='Cable G1=5 G2=10'" -e "TIME='$TIME'" plotMetrics.gnuplot
+	gnuplot -p -e "TITLE='Cable'" -e "TIME='$TIME'" plotMetrics.gnuplot
 fi
 echo -e "\t\033[33mEJECUCIÓN COMPLETADA"
