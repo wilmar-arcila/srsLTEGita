@@ -419,7 +419,7 @@ function copiarMetricas
 		cp /tmp/Iperf_$TIME.csv $METRICS_DDIR/Iperf_$TIME.csv
 	fi
 	cp /tmp/$METRICS_FILE $METRICS_DDIR/$METRICS_DFILE
-	echo -en "\n-> Archivo de métricas OK      | /tmp/$METRICS_FILE -> $METRICS_DDIR/$METRICS_DFILE"
+	echo -e "\n-> Archivo de métricas OK      | /tmp/$METRICS_FILE -> $METRICS_DDIR/$METRICS_DFILE"
 }
 
 function enviarMetricas
@@ -428,10 +428,10 @@ function enviarMetricas
 	local METRICS_FILE=ue_metrics.csv
 	local METRICS_DFILE=ue_m_$TIME.csv
 	if [[ $MODO == 'eNB' ]]; then
-		echo -ne "\n-> Esperando metricas del UE   | ...\033[K\033[s"
+		echo -ne "-> Esperando metricas del UE   | ...\033[K\033[s"
 		nc -l $PUERTONC > $METRICS_DDIR/$METRICS_DFILE
 	else
-		echo -en "\n-> Enviando metricas al eNB    | ..."
+		echo -en "-> Enviando metricas al eNB    | ..."
 		sleep 2
 		nc -w 1 $SEND_METRICS_IP $PUERTONC < /tmp/$METRICS_FILE
 	fi
@@ -592,8 +592,10 @@ sleep 0.5
 if [[ $SEND_METRICS == 'ON' ]]; then
 	enviarMetricas
 	sleep 1
-	./processMetrics.sh $TIME
-	sleep 1
-	gnuplot -p -e "TITLE='Cable'" -e "TIME='$TIME'" plotMetrics.gnuplot
+	if [[ $MODO == 'eNB' ]]; then
+		./processMetrics.sh $TIME
+		sleep 1
+		gnuplot -p -e "TITLE='Cable'" -e "TIME='$TIME'" plotMetrics.gnuplot
+	fi
 fi
-echo -e "\t\033[33mEJECUCIÓN COMPLETADA"
+echo -e "\n\t\033[33mEJECUCIÓN COMPLETADA"
